@@ -7,7 +7,7 @@ import { Telegraf, Context } from 'telegraf';
 import { mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import { ReActAgent } from '../agent/react.js';
-import { toolNames, setApprovalCallback, setAskCallback, logGlobal, getGlobalLog, shouldTroll, getTrollMessage } from '../tools/index.js';
+import { toolNames, setApprovalCallback, setAskCallback, logGlobal, getGlobalLog, shouldTroll, getTrollMessage, saveChatMessage } from '../tools/index.js';
 import { executeCommand } from '../tools/bash.js';
 import { 
   consumePendingCommand, 
@@ -745,6 +745,10 @@ export function createBot(config: BotConfig) {
     // Log to global activity log
     logGlobal(userId, 'message', text.slice(0, 80));
     
+    // Save to chat history (for context injection)
+    const username = ctx.from?.username || ctx.from?.first_name || String(userId);
+    saveChatMessage(username, text);
+    
     // Detect prompt injection attempts
     if (detectPromptInjection(text)) {
       console.log(`[SECURITY] Prompt injection attempt from ${userId}: ${text.slice(0, 50)}`);
@@ -844,10 +848,15 @@ export function createBot(config: BotConfig) {
           }
         }
         
+        // Save bot response to chat history
+        saveChatMessage('LocalTopSH', finalResponse.slice(0, 150), true);
+        
         // Periodic troll message
         if (shouldTroll()) {
           await new Promise(r => setTimeout(r, 2000));  // Wait a bit
-          await safeSend(chatId, () => ctx.reply(getTrollMessage()));
+          const trollMsg = getTrollMessage();
+          await safeSend(chatId, () => ctx.reply(trollMsg));
+          saveChatMessage('LocalTopSH', trollMsg, true);
         }
       } catch (e: any) {
         clearInterval(typing);

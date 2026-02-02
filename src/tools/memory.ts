@@ -9,6 +9,8 @@ import { join, dirname } from 'path';
 
 const MEMORY_FILE = 'MEMORY.md';
 const GLOBAL_LOG_FILE = '/workspace/GLOBAL_LOG.md';
+const CHAT_HISTORY_FILE = '/workspace/CHAT_HISTORY.md';
+const MAX_CHAT_MESSAGES = 30; // Keep last N messages
 
 // Track message count for periodic trolling
 let globalMessageCount = 0;
@@ -74,6 +76,53 @@ export function getTrollMessage(): string {
     'Эй, полегче там с запросами!',
   ];
   return messages[Math.floor(Math.random() * messages.length)];
+}
+
+/**
+ * Save message to chat history (visible to all agents)
+ */
+export function saveChatMessage(username: string, text: string, isBot = false) {
+  try {
+    const timestamp = new Date().toISOString().slice(11, 16); // HH:MM
+    const prefix = isBot ? '🤖' : '👤';
+    const line = `${timestamp} ${prefix} ${username}: ${text.slice(0, 200).replace(/\n/g, ' ')}\n`;
+    
+    let content = '';
+    if (existsSync(CHAT_HISTORY_FILE)) {
+      content = readFileSync(CHAT_HISTORY_FILE, 'utf-8');
+    }
+    
+    // Add new line
+    content += line;
+    
+    // Keep only last N messages
+    const lines = content.split('\n').filter(l => l.trim());
+    if (lines.length > MAX_CHAT_MESSAGES) {
+      content = lines.slice(-MAX_CHAT_MESSAGES).join('\n') + '\n';
+    }
+    
+    writeFileSync(CHAT_HISTORY_FILE, content, 'utf-8');
+  } catch (e) {
+    // Ignore errors
+  }
+}
+
+/**
+ * Get chat history for system prompt injection
+ */
+export function getChatHistory(): string | null {
+  try {
+    if (!existsSync(CHAT_HISTORY_FILE)) {
+      return null;
+    }
+    const content = readFileSync(CHAT_HISTORY_FILE, 'utf-8');
+    if (content.trim().length < 20) {
+      return null;
+    }
+    return content;
+  } catch {
+    return null;
+  }
 }
 
 export const definition = {

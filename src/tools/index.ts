@@ -27,7 +27,8 @@ import * as memory from './memory.js';
 // Re-export callback setters
 export { setApprovalCallback } from './bash.js';
 export { setAskCallback } from './ask.js';
-export { getMemoryForPrompt, logGlobal, getGlobalLog, shouldTroll, getTrollMessage } from './memory.js';
+export { getMemoryForPrompt, logGlobal, getGlobalLog, shouldTroll, getTrollMessage, saveChatMessage, getChatHistory } from './memory.js';
+export { getChatHistory as getChatHistoryForPrompt } from './memory.js';
 
 // Tool definitions for OpenAI
 export const definitions = [

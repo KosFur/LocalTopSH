@@ -13,7 +13,7 @@ import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import * as tools from '../tools/index.js';
-import { getMemoryForPrompt } from '../tools/memory.js';
+import { getMemoryForPrompt, getChatHistory } from '../tools/memory.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SYSTEM_PROMPT_FILE = join(__dirname, 'system.txt');
@@ -98,6 +98,15 @@ Check if port free: lsof -i :PORT or netstat -tlnp | grep PORT
 Notes from previous sessions (use "memory" tool to update):
 ${memoryContent}
 </MEMORY>`;
+    }
+    
+    // Add recent chat history (group context)
+    const chatHistory = getChatHistory();
+    if (chatHistory) {
+      prompt += `\n\n<RECENT_CHAT>
+Recent messages in group chat (for context, you can reference what others said):
+${chatHistory}
+</RECENT_CHAT>`;
     }
     
     return prompt;
