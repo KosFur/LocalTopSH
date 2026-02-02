@@ -169,13 +169,19 @@ export function createBot(config: BotConfig) {
   
   // Set up approval callback for dangerous commands
   setApprovalCallback(async (sessionId, command, reason) => {
+    console.log(`[approval] Requesting approval for session ${sessionId}`);
+    console.log(`[approval] Command: ${command}`);
+    console.log(`[approval] Reason: ${reason}`);
+    
     const chatId = sessionChats.get(sessionId);
     if (!chatId) {
-      console.log(`[approval] No chat found for session ${sessionId}`);
+      console.log(`[approval] ERROR: No chat found for session ${sessionId}`);
+      console.log(`[approval] Available sessions:`, Array.from(sessionChats.keys()));
       return false;
     }
     
     const { id, promise } = requestApproval(sessionId, command, reason);
+    console.log(`[approval] Created approval request with ID: ${id}`);
     
     // Send approval request with inline keyboard
     const message = `⚠️ <b>Dangerous Command Detected</b>\n\n` +
@@ -183,21 +189,29 @@ export function createBot(config: BotConfig) {
       `<pre>${escapeHtml(command)}</pre>\n\n` +
       `Do you want to execute this command?`;
     
+    const callbackData = {
+      approve: `approve:${id}`,
+      deny: `deny:${id}`,
+    };
+    console.log(`[approval] Callback data:`, callbackData);
+    
     try {
-      await bot.telegram.sendMessage(chatId, message, {
+      const sent = await bot.telegram.sendMessage(chatId, message, {
         parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [[
-            { text: '✅ Approve', callback_data: `approve:${id}` },
-            { text: '❌ Deny', callback_data: `deny:${id}` },
+            { text: '✅ Approve', callback_data: callbackData.approve },
+            { text: '❌ Deny', callback_data: callbackData.deny },
           ]],
         },
       });
+      console.log(`[approval] Message sent, message_id: ${sent.message_id}`);
     } catch (e) {
       console.error('[approval] Failed to send approval request:', e);
       return false;
     }
     
+    console.log(`[approval] Waiting for user response (60s timeout)...`);
     return promise;
   });
   
@@ -242,38 +256,14 @@ export function createBot(config: BotConfig) {
     return promise;
   });
   
-  // Handle callback queries (approvals + ask_user)
-  bot.on('callback_query', async (ctx) => {
-    const data = (ctx.callbackQuery as any).data;
-    if (!data) return;
-    
+  // Handle approval buttons (approve:id or deny:id)
+  bot.action(/^(approve|deny):(.+)$/, async (ctx) => {
     try {
-      // Handle ask_user responses
-      if (data.startsWith('ask:')) {
-        const [, id, indexStr] = data.split(':');
-        const pending = pendingQuestions.get(id);
-        
-        if (pending) {
-          const keyboard = (ctx.callbackQuery.message as any)?.reply_markup?.inline_keyboard;
-          const optionIndex = parseInt(indexStr);
-          const selectedText = keyboard?.[optionIndex]?.[0]?.text || `Option ${optionIndex + 1}`;
-          
-          pending.resolve(selectedText);
-          
-          try {
-            await ctx.editMessageText(`✅ Selected: <b>${escapeHtml(selectedText)}</b>`, { parse_mode: 'HTML' });
-          } catch {}
-          
-          await ctx.answerCbQuery(`Selected: ${selectedText}`).catch(() => {});
-        } else {
-          await ctx.answerCbQuery('This question has expired').catch(() => {});
-        }
-        return;
-      }
+      const match = ctx.match;
+      const action = match[1];
+      const id = match[2];
       
-      // Handle approval/deny
-      const [action, id] = data.split(':');
-      if (!id || (action !== 'approve' && action !== 'deny')) return;
+      console.log(`[callback] Received ${action} for ${id}`);
       
       const approved = action === 'approve';
       const handled = handleApproval(id, approved);
@@ -288,11 +278,45 @@ export function createBot(config: BotConfig) {
         } catch {}
         
         await ctx.answerCbQuery(approved ? 'Command approved' : 'Command denied').catch(() => {});
+        console.log(`[callback] ${action} handled successfully`);
       } else {
-        await ctx.answerCbQuery('This approval has expired or was already handled').catch(() => {});
+        await ctx.answerCbQuery('This approval has expired').catch(() => {});
+        console.log(`[callback] ${action} expired or already handled`);
       }
     } catch (e) {
-      console.error('[callback] Error handling callback query:', e);
+      console.error('[callback] Error:', e);
+      await ctx.answerCbQuery('Error processing').catch(() => {});
+    }
+  });
+  
+  // Handle ask_user buttons (ask:id:index)
+  bot.action(/^ask:(.+):(\d+)$/, async (ctx) => {
+    try {
+      const match = ctx.match;
+      const id = match[1];
+      const optionIndex = parseInt(match[2]);
+      
+      console.log(`[callback] Received ask response for ${id}, option ${optionIndex}`);
+      
+      const pending = pendingQuestions.get(id);
+      
+      if (pending) {
+        const keyboard = (ctx.callbackQuery.message as any)?.reply_markup?.inline_keyboard;
+        const selectedText = keyboard?.[optionIndex]?.[0]?.text || `Option ${optionIndex + 1}`;
+        
+        pending.resolve(selectedText);
+        
+        try {
+          await ctx.editMessageText(`✅ Selected: <b>${escapeHtml(selectedText)}</b>`, { parse_mode: 'HTML' });
+        } catch {}
+        
+        await ctx.answerCbQuery(`Selected: ${selectedText}`).catch(() => {});
+      } else {
+        await ctx.answerCbQuery('This question has expired').catch(() => {});
+      }
+    } catch (e) {
+      console.error('[callback] Error:', e);
+      await ctx.answerCbQuery('Error processing').catch(() => {});
     }
   });
   
@@ -327,6 +351,19 @@ export function createBot(config: BotConfig) {
     
     return { respond: false, text: '' };
   }
+  
+  // Debug middleware - log all updates
+  bot.use(async (ctx, next) => {
+    const updateType = ctx.updateType;
+    console.log(`[telegram] Update type: ${updateType}`);
+    
+    if (updateType === 'callback_query') {
+      const data = (ctx.callbackQuery as any)?.data;
+      console.log(`[telegram] Callback query data: ${data}`);
+    }
+    
+    return next();
+  });
   
   // Auth middleware
   bot.use(async (ctx, next) => {
