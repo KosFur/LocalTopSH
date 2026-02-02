@@ -6,6 +6,7 @@
 import { Telegraf, Context } from 'telegraf';
 import { mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
+import OpenAI from 'openai';
 import { ReActAgent } from '../agent/react.js';
 import { toolNames, setApprovalCallback, setAskCallback, setSendFileCallback, setDeleteMessageCallback, setEditMessageCallback, recordBotMessage, logGlobal, getGlobalLog, shouldTroll, getTrollMessage, saveChatMessage } from '../tools/index.js';
 import { executeCommand } from '../tools/bash.js';
@@ -430,25 +431,67 @@ function getRandomReaction(sentiment: 'positive' | 'negative' | 'neutral' | 'ran
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
-// Analyze message sentiment (simple heuristic)
-function analyzeSentiment(text: string): 'positive' | 'negative' | 'neutral' {
-  const lower = text.toLowerCase();
-  
-  // Negative keywords
-  const negativeWords = ['хуй', 'пизд', 'блять', 'сука', 'ебан', 'говно', 'дерьмо', 'тупо', 'хуев', 'пиздец', 'нахуй', 'залупа', 'мудак', 'дебил', 'идиот', 'сломал', 'не работает', 'ошибка', 'error', 'fail', 'bug', 'сломано'];
-  
-  // Positive keywords  
-  const positiveWords = ['спасибо', 'круто', 'класс', 'супер', 'отлично', 'молодец', 'красавчик', 'заебись', 'охуенно', 'пиздато', 'топ', 'огонь', 'thanks', 'cool', 'nice', 'good', 'great', 'awesome'];
-  
-  for (const word of negativeWords) {
-    if (lower.includes(word)) return 'negative';
+// LLM client for reactions (will be set in createBot)
+let reactionLLM: OpenAI | null = null;
+let reactionModel = '';
+
+// All available reactions for LLM to choose from
+const ALL_REACTIONS = ['❤️', '🔥', '👍', '🎉', '💯', '🤩', '👏', '😍', '🤗', '🏆', '💩', '👎', '🤡', '😴', '🥱', '🗿', '🤮', '💔', '😡', '👀', '🤔', '🤨', '😐', '🌚', '👻', '🤷', '😂', '🤣', '😈', '🙈', '🎃', '💀', '🤯'];
+
+// Get reaction via LLM
+async function getSmartReaction(text: string, username: string): Promise<string> {
+  if (!reactionLLM) {
+    // Fallback to random
+    return ALL_REACTIONS[Math.floor(Math.random() * ALL_REACTIONS.length)];
   }
   
-  for (const word of positiveWords) {
-    if (lower.includes(word)) return 'positive';
+  try {
+    const response = await reactionLLM.chat.completions.create({
+      model: reactionModel,
+      messages: [
+        {
+          role: 'system',
+          content: `Ты выбираешь эмодзи-реакцию на сообщение в чате. Отвечай ТОЛЬКО одним эмодзи из списка.
+Доступные: ${ALL_REACTIONS.join(' ')}
+
+Правила:
+- Смешное/ироничное → 😂🤣🤡😈
+- Крутое/полезное → 🔥💯🏆👏❤️
+- Глупое/бред → 💩🤡🗿😴
+- Вопрос/непонятно → 🤔🤨👀
+- Грустное/жалоба → 💔😢
+- Страшное/шок → 🤯💀🎃
+- Милое → 😍🤗❤️
+
+Отвечай ОДНИМ эмодзи!`
+        },
+        {
+          role: 'user',
+          content: `@${username}: ${text.slice(0, 200)}`
+        }
+      ],
+      max_tokens: 10,
+      temperature: 0.9,
+    });
+    
+    const emoji = response.choices[0]?.message?.content?.trim() || '';
+    
+    // Validate it's a real emoji from our list
+    if (ALL_REACTIONS.includes(emoji)) {
+      return emoji;
+    }
+    
+    // Try to extract emoji from response
+    for (const r of ALL_REACTIONS) {
+      if (emoji.includes(r)) return r;
+    }
+    
+    // Fallback
+    return ALL_REACTIONS[Math.floor(Math.random() * ALL_REACTIONS.length)];
+  } catch (e: any) {
+    console.log(`[reaction] LLM error: ${e.message?.slice(0, 50)}`);
+    return ALL_REACTIONS[Math.floor(Math.random() * ALL_REACTIONS.length)];
   }
-  
-  return 'neutral';
 }
 
 // Should we react to this message?
@@ -461,6 +504,13 @@ export function createBot(config: BotConfig) {
   const bot = new Telegraf(config.telegramToken);
   let botUsername = '';
   let botId = 0;
+  
+  // Initialize LLM for smart reactions
+  reactionLLM = new OpenAI({
+    baseURL: config.baseUrl,
+    apiKey: config.apiKey,
+  });
+  reactionModel = config.model;
   
   // Set max concurrent users from config
   if (config.maxConcurrentUsers) {
@@ -811,8 +861,8 @@ export function createBot(config: BotConfig) {
       
       // Check if should react
       if (shouldReact()) {
-        const sentiment = analyzeSentiment(msg.text);
-        const reaction = getRandomReaction(sentiment);
+        const username = msg.from?.username || msg.from?.first_name || 'anon';
+        const reaction = await getSmartReaction(msg.text, username);
         
         try {
           await ctx.telegram.setMessageReaction(
@@ -820,7 +870,7 @@ export function createBot(config: BotConfig) {
             msg.message_id, 
             [{ type: 'emoji', emoji: reaction as any }]
           );
-          console.log(`[reaction] ${reaction} to "${msg.text.slice(0, 30)}..." (${sentiment})`);
+          console.log(`[reaction] ${reaction} to "${msg.text.slice(0, 30)}..."`);
         } catch (e: any) {
           console.log(`[reaction] Failed ${reaction}: ${e.message?.slice(0, 50)}`);
         }
