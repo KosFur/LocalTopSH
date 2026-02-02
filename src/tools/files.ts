@@ -111,11 +111,23 @@ function isSensitiveFile(filePath: string): boolean {
 }
 
 /**
- * Check if path tries to access another user's workspace
+ * Check if path tries to access another user's workspace or list all workspaces
  */
 function isOtherUserWorkspace(filePath: string, userWorkspace: string): boolean {
   const resolvedPath = resolve(filePath).toLowerCase();
   const resolvedUserWs = resolve(userWorkspace).toLowerCase();
+  
+  // Block listing /workspace directly (would show all user folders)
+  if (resolvedPath === '/workspace' || resolvedPath === '/workspace/') {
+    console.log(`[SECURITY] Blocked listing /workspace root`);
+    return true;
+  }
+  
+  // Block access to _shared folder (global logs)
+  if (resolvedPath.includes('/workspace/_shared')) {
+    console.log(`[SECURITY] Blocked access to shared folder: ${filePath}`);
+    return true;
+  }
   
   // If path is in /workspace but NOT in user's workspace - block it
   if (resolvedPath.includes('/workspace/') && !resolvedPath.startsWith(resolvedUserWs)) {

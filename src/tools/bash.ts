@@ -112,13 +112,18 @@ function checkWorkspaceIsolation(command: string, userWorkspace: string): { bloc
   // Patterns that access other workspaces
   const otherWorkspacePatterns = [
     // Direct access to /workspace/OTHER_ID
-    new RegExp(`/workspace/(?!${userId})\\d+`, 'i'),
+    new RegExp(`/workspace/(?!${userId})[\\d_]`, 'i'),
     // Wildcard access to all workspaces
     /\/workspace\/\*/,
-    // Find/ls across /workspace root
-    /\b(find|ls|cat|head|tail|grep|less|more)\s+[^|]*\/workspace\s*($|[|;>&])/,
+    // Find/ls/cat across /workspace root (show all users)
+    /\b(find|ls|cat|head|tail|grep|less|more|tree|du|wc)\s+[^|]*\/workspace\s*($|[|;>&\n])/,
+    // Access to _shared folder (global logs)
+    /\/workspace\/_shared/i,
     // Parent directory traversal from workspace
     /\.\.\/\.\./,
+    // glob patterns that might match other workspaces
+    /\/workspace\/\[/,
+    /\/workspace\/\{/,
   ];
   
   for (const pattern of otherWorkspacePatterns) {
