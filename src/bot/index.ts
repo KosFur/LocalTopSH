@@ -359,6 +359,58 @@ interface ToolTracker {
 const toolTrackers = new Map<number, ToolTracker>();
 const TOOL_UPDATE_INTERVAL = 3; // Update every N tools
 
+// Random reactions for messages
+const POSITIVE_REACTIONS = ['❤️', '🔥', '👍', '🎉', '💯', '⭐', '🤩', '👏'];
+const NEGATIVE_REACTIONS = ['💩', '👎', '🤡', '😴', '🥱', '💀', '🗿'];
+const NEUTRAL_REACTIONS = ['👀', '🤔', '😏', '🙄', '😐'];
+
+function getRandomReaction(sentiment: 'positive' | 'negative' | 'neutral' | 'random'): string {
+  let pool: string[];
+  
+  if (sentiment === 'random') {
+    // Weighted random: 40% positive, 30% neutral, 30% negative
+    const rand = Math.random();
+    if (rand < 0.4) pool = POSITIVE_REACTIONS;
+    else if (rand < 0.7) pool = NEUTRAL_REACTIONS;
+    else pool = NEGATIVE_REACTIONS;
+  } else if (sentiment === 'positive') {
+    pool = POSITIVE_REACTIONS;
+  } else if (sentiment === 'negative') {
+    pool = NEGATIVE_REACTIONS;
+  } else {
+    pool = NEUTRAL_REACTIONS;
+  }
+  
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// Analyze message sentiment (simple heuristic)
+function analyzeSentiment(text: string): 'positive' | 'negative' | 'neutral' {
+  const lower = text.toLowerCase();
+  
+  // Negative keywords
+  const negativeWords = ['хуй', 'пизд', 'блять', 'сука', 'ебан', 'говно', 'дерьмо', 'тупо', 'хуев', 'пиздец', 'нахуй', 'залупа', 'мудак', 'дебил', 'идиот', 'сломал', 'не работает', 'ошибка', 'error', 'fail', 'bug', 'сломано'];
+  
+  // Positive keywords  
+  const positiveWords = ['спасибо', 'круто', 'класс', 'супер', 'отлично', 'молодец', 'красавчик', 'заебись', 'охуенно', 'пиздато', 'топ', 'огонь', 'thanks', 'cool', 'nice', 'good', 'great', 'awesome'];
+  
+  for (const word of negativeWords) {
+    if (lower.includes(word)) return 'negative';
+  }
+  
+  for (const word of positiveWords) {
+    if (lower.includes(word)) return 'positive';
+  }
+  
+  return 'neutral';
+}
+
+// Should we react to this message?
+function shouldReact(): boolean {
+  // React to ~25% of messages
+  return Math.random() < 0.25;
+}
+
 export function createBot(config: BotConfig) {
   const bot = new Telegraf(config.telegramToken);
   let botUsername = '';
@@ -581,6 +633,43 @@ export function createBot(config: BotConfig) {
     }
   });
   
+  // React to messages in groups (even if not addressed to bot)
+  bot.on('text', async (ctx, next) => {
+    const msg = ctx.message;
+    const chatType = msg?.chat?.type;
+    const isGroup = chatType === 'group' || chatType === 'supergroup';
+    
+    if (isGroup && msg?.text) {
+      // Don't react to own messages
+      if (msg.from?.id === botId) {
+        return next();
+      }
+      
+      // Save to chat history regardless
+      const username = msg.from?.username || msg.from?.first_name || 'anon';
+      saveChatMessage(username, msg.text);
+      
+      // Check if should react
+      if (shouldReact()) {
+        const sentiment = analyzeSentiment(msg.text);
+        const reaction = getRandomReaction(sentiment);
+        
+        try {
+          await ctx.telegram.setMessageReaction(
+            msg.chat.id, 
+            msg.message_id, 
+            [{ type: 'emoji', emoji: reaction as any }]
+          );
+          console.log(`[reaction] ${reaction} to "${msg.text.slice(0, 30)}..." (${sentiment})`);
+        } catch (e) {
+          // Ignore reaction errors
+        }
+      }
+    }
+    
+    return next();
+  });
+  
   // Check if should respond (groups: only @mention or reply)
   function shouldRespond(ctx: Context & { message?: any }): { respond: boolean; text: string } {
     const msg = ctx.message;
@@ -745,9 +834,12 @@ export function createBot(config: BotConfig) {
     // Log to global activity log
     logGlobal(userId, 'message', text.slice(0, 80));
     
-    // Save to chat history (for context injection)
-    const username = ctx.from?.username || ctx.from?.first_name || String(userId);
-    saveChatMessage(username, text);
+    // Save to chat history (only for private chats, groups are saved in reaction handler)
+    const chatType = ctx.chat?.type;
+    if (chatType === 'private') {
+      const username = ctx.from?.username || ctx.from?.first_name || String(userId);
+      saveChatMessage(username, text);
+    }
     
     // Detect prompt injection attempts
     if (detectPromptInjection(text)) {
