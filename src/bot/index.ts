@@ -1,11 +1,12 @@
 /**
  * Telegram Bot - interface to ReAct Agent
- * Features: groups, reply, traces
+ * Features: groups, reply, traces, exec approvals
  */
 
 import { Telegraf, Context } from 'telegraf';
 import { ReActAgent } from '../agent/react.js';
-import { toolNames } from '../tools/index.js';
+import { toolNames, setApprovalCallback } from '../tools/index.js';
+import { requestApproval, handleApproval, cancelSessionApprovals, getSessionApprovals } from '../approvals/index.js';
 
 export interface BotConfig {
   telegramToken: string;
@@ -16,6 +17,7 @@ export interface BotConfig {
   zaiApiKey?: string;
   tavilyApiKey?: string;
   allowedUsers?: number[];
+  exposedPorts?: number[];  // ports accessible from external network
 }
 
 // Escape HTML
@@ -26,8 +28,37 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;');
 }
 
+// Convert Markdown table to readable list format
+function convertTable(tableText: string): string {
+  const lines = tableText.trim().split('\n');
+  if (lines.length < 2) return tableText;
+  
+  // Parse header
+  const headerCells = lines[0].split('|').map(c => c.trim()).filter(c => c);
+  
+  // Skip separator line (|---|---|)
+  const dataLines = lines.slice(2);
+  
+  // Convert each row to list item
+  const result: string[] = [];
+  for (const line of dataLines) {
+    const cells = line.split('|').map(c => c.trim()).filter(c => c);
+    if (cells.length === 0) continue;
+    
+    // Format: "• Header1: Value1 | Header2: Value2"
+    const parts = cells.map((cell, i) => {
+      const header = headerCells[i] || '';
+      return header ? `${header}: ${cell}` : cell;
+    });
+    result.push(`• ${parts.join(' | ')}`);
+  }
+  
+  return result.join('\n');
+}
+
 // Markdown → Telegram HTML
 function mdToHtml(text: string): string {
+  // 1. Extract code blocks first
   const codeBlocks: string[] = [];
   let result = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
     const idx = codeBlocks.length;
@@ -35,6 +66,13 @@ function mdToHtml(text: string): string {
     return `__CODE_BLOCK_${idx}__`;
   });
   
+  // 2. Convert tables to list format (before escaping)
+  // Match table pattern: lines starting with |
+  result = result.replace(/(?:^\|.+\|$\n?)+/gm, (table) => {
+    return convertTable(table);
+  });
+  
+  // 3. Extract inline code
   const inlineCode: string[] = [];
   result = result.replace(/`([^`]+)`/g, (_, code) => {
     const idx = inlineCode.length;
@@ -42,8 +80,10 @@ function mdToHtml(text: string): string {
     return `__INLINE_CODE_${idx}__`;
   });
   
+  // 4. Escape HTML
   result = escapeHtml(result);
   
+  // 5. Restore code blocks and inline code
   codeBlocks.forEach((block, i) => {
     result = result.replace(`__CODE_BLOCK_${i}__`, block);
   });
@@ -51,6 +91,7 @@ function mdToHtml(text: string): string {
     result = result.replace(`__INLINE_CODE_${i}__`, code);
   });
   
+  // 6. Convert markdown formatting
   result = result
     .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
     .replace(/\*(.+?)\*/g, '<i>$1</i>')
@@ -101,6 +142,9 @@ export function createBot(config: BotConfig) {
   const bot = new Telegraf(config.telegramToken);
   let botUsername = '';
   
+  // Session to chatId mapping (for sending approval requests)
+  const sessionChats = new Map<string, number>();
+  
   bot.telegram.getMe().then(me => {
     botUsername = me.username || '';
     console.log(`[bot] @${botUsername}`);
@@ -113,9 +157,71 @@ export function createBot(config: BotConfig) {
     cwd: config.cwd,
     zaiApiKey: config.zaiApiKey,
     tavilyApiKey: config.tavilyApiKey,
+    exposedPorts: config.exposedPorts,
   });
   
-  // Check if should respond
+  // Set up approval callback for dangerous commands
+  setApprovalCallback(async (sessionId, command, reason) => {
+    const chatId = sessionChats.get(sessionId);
+    if (!chatId) {
+      console.log(`[approval] No chat found for session ${sessionId}`);
+      return false;
+    }
+    
+    const { id, promise } = requestApproval(sessionId, command, reason);
+    
+    // Send approval request with inline keyboard
+    const message = `⚠️ <b>Dangerous Command Detected</b>\n\n` +
+      `<b>Reason:</b> ${escapeHtml(reason)}\n\n` +
+      `<pre>${escapeHtml(command)}</pre>\n\n` +
+      `Do you want to execute this command?`;
+    
+    try {
+      await bot.telegram.sendMessage(chatId, message, {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '✅ Approve', callback_data: `approve:${id}` },
+            { text: '❌ Deny', callback_data: `deny:${id}` },
+          ]],
+        },
+      });
+    } catch (e) {
+      console.error('[approval] Failed to send approval request:', e);
+      return false;
+    }
+    
+    return promise;
+  });
+  
+  // Handle approval/deny callbacks
+  bot.on('callback_query', async (ctx) => {
+    const data = (ctx.callbackQuery as any).data;
+    if (!data) return;
+    
+    const [action, id] = data.split(':');
+    if (!id || (action !== 'approve' && action !== 'deny')) return;
+    
+    const approved = action === 'approve';
+    const handled = handleApproval(id, approved);
+    
+    if (handled) {
+      // Update the message to show the decision
+      const statusText = approved 
+        ? '✅ <b>Command Approved</b>' 
+        : '❌ <b>Command Denied</b>';
+      
+      try {
+        await ctx.editMessageText(statusText, { parse_mode: 'HTML' });
+      } catch {}
+      
+      await ctx.answerCbQuery(approved ? 'Command approved' : 'Command denied');
+    } else {
+      await ctx.answerCbQuery('This approval has expired or was already handled');
+    }
+  });
+  
+  // Check if should respond (groups: only @mention or reply)
   function shouldRespond(ctx: Context & { message?: any }): { respond: boolean; text: string } {
     const msg = ctx.message;
     if (!msg?.text) return { respond: false, text: '' };
@@ -124,18 +230,24 @@ export function createBot(config: BotConfig) {
     const isPrivate = chatType === 'private';
     const isGroup = chatType === 'group' || chatType === 'supergroup';
     
+    // Private chat - always respond
     if (isPrivate) {
       return { respond: true, text: msg.text };
     }
     
-    if (isGroup) {
+    // Group chat - only respond to @mention or reply to bot
+    if (isGroup && botUsername) {
       const replyToBot = msg.reply_to_message?.from?.username === botUsername;
-      const mentionsBot = botUsername && msg.text.includes(`@${botUsername}`);
+      const mentionsBot = msg.text.includes(`@${botUsername}`);
       
       if (replyToBot || mentionsBot) {
+        // Remove @mention from text
         const cleanText = msg.text.replace(new RegExp(`@${botUsername}\\s*`, 'gi'), '').trim();
         return { respond: true, text: cleanText || msg.text };
       }
+      
+      // Group message without mention/reply - ignore
+      return { respond: false, text: '' };
     }
     
     return { respond: false, text: '' };
@@ -162,9 +274,11 @@ export function createBot(config: BotConfig) {
     const chatType = ctx.message?.chat?.type;
     const msg = `<b>🤖 Coding Agent</b>\n\n` +
       `<b>Tools:</b>\n<code>${toolNames.join('\n')}</code>\n\n` +
+      `🛡️ <b>Security:</b> Dangerous commands require approval\n\n` +
       (chatType !== 'private' ? `💬 In groups: @${botUsername} or reply\n\n` : '') +
       `/clear - Reset session\n` +
-      `/status - Status`;
+      `/status - Status\n` +
+      `/approvals - Pending approvals`;
     await ctx.reply(msg, { parse_mode: 'HTML' });
   });
   
@@ -172,6 +286,7 @@ export function createBot(config: BotConfig) {
   bot.command('clear', async (ctx) => {
     const id = ctx.from?.id?.toString();
     if (id) {
+      cancelSessionApprovals(id);
       agent.clear(id);
       await ctx.reply('🗑 Session cleared');
     }
@@ -183,11 +298,41 @@ export function createBot(config: BotConfig) {
     if (!id) return;
     
     const info = agent.getInfo(id);
+    const pending = getSessionApprovals(id);
     const msg = `<b>📊 Status</b>\n` +
       `Model: <code>${config.model}</code>\n` +
       `History: ${info.messages} msgs\n` +
-      `Tools: ${info.tools}`;
+      `Tools: ${info.tools}\n` +
+      `🛡️ Exec Approvals: ${pending.length} pending`;
     await ctx.reply(msg, { parse_mode: 'HTML' });
+  });
+  
+  // /approvals - show pending approvals
+  bot.command('approvals', async (ctx) => {
+    const id = ctx.from?.id?.toString();
+    if (!id) return;
+    
+    const pending = getSessionApprovals(id);
+    if (pending.length === 0) {
+      await ctx.reply('✅ No pending approvals');
+      return;
+    }
+    
+    for (const approval of pending) {
+      const message = `⏳ <b>Pending Approval</b>\n\n` +
+        `<b>Reason:</b> ${escapeHtml(approval.reason)}\n\n` +
+        `<pre>${escapeHtml(approval.command)}</pre>`;
+      
+      await ctx.reply(message, {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '✅ Approve', callback_data: `approve:${approval.id}` },
+            { text: '❌ Deny', callback_data: `deny:${approval.id}` },
+          ]],
+        },
+      });
+    }
   });
   
   // Text messages
@@ -200,6 +345,10 @@ export function createBot(config: BotConfig) {
     
     const sessionId = userId.toString();
     const messageId = ctx.message.message_id;
+    
+    // Save chat ID for approval requests
+    sessionChats.set(sessionId, ctx.chat.id);
+    
     console.log(`[bot] ${userId}: ${text.slice(0, 50)}...`);
     
     await ctx.sendChatAction('typing');

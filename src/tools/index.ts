@@ -21,6 +21,9 @@ import * as files from './files.js';
 import * as web from './web.js';
 import * as tasks from './tasks.js';
 
+// Re-export approval callback setter
+export { setApprovalCallback } from './bash.js';
+
 // Tool definitions for OpenAI
 export const definitions = [
   bash.definition,
@@ -64,7 +67,7 @@ export async function execute(
   
   switch (name) {
     case 'run_command':
-      return bash.execute(args as any, ctx.cwd);
+      return bash.execute(args as any, { cwd: ctx.cwd, sessionId: ctx.sessionId });
     
     case 'read_file':
       return files.executeRead(args as any, ctx.cwd);

@@ -23,6 +23,11 @@ const allowedUsers = process.env.ALLOWED_USERS
   ? process.env.ALLOWED_USERS.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n))
   : [];
 
+// Parse exposed ports from env (comma-separated)
+const exposedPorts = process.env.EXPOSED_PORTS
+  ? process.env.EXPOSED_PORTS.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n))
+  : [];
+
 const config = {
   baseUrl: process.env.BASE_URL!,
   apiKey: process.env.API_KEY!,
@@ -33,6 +38,7 @@ const config = {
   cwd: process.env.AGENT_CWD || process.cwd(),
   gatewayPort: parseInt(process.env.GATEWAY_PORT || '3100'),
   allowedUsers,
+  exposedPorts,
 };
 
 const mode = process.argv[2] || 'bot';
@@ -51,6 +57,7 @@ if (mode === 'gateway') {
   console.log(`Model: ${config.model}`);
   console.log(`Search: ${config.zaiApiKey ? 'Z.AI' : config.tavilyApiKey ? 'Tavily' : 'none'}`);
   console.log(`Allowed: ${allowedUsers.length ? allowedUsers.join(', ') : 'all'}`);
+  console.log(`Ports: ${exposedPorts.length ? exposedPorts.join(', ') : 'none'}`);
   
   const bot = createBot(config);
   
@@ -59,6 +66,7 @@ if (mode === 'gateway') {
     { command: 'start', description: 'Start / Help' },
     { command: 'clear', description: 'Clear session history' },
     { command: 'status', description: 'Show status' },
+    { command: 'approvals', description: 'Pending command approvals' },
   ]);
   
   bot.launch();

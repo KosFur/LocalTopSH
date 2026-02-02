@@ -1,13 +1,17 @@
 /**
  * ReAct Agent - Reasoning + Acting loop
  * Core: Think → Act → Observe → Repeat
+ * 
+ * Session format (clean, no tool calls in history):
+ * - System prompt (fresh each time)
+ * - [User + Assistant pairs from previous conversations]
+ * - Current user message
  */
 
 import OpenAI from 'openai';
-import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { homedir } from 'os';
 import * as tools from '../tools/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -21,15 +25,14 @@ export interface AgentConfig {
   zaiApiKey?: string;
   tavilyApiKey?: string;
   maxIterations?: number;
-  maxHistory?: number;
+  maxHistory?: number;  // max user-assistant pairs to keep
+  exposedPorts?: number[];  // ports exposed to external network
 }
 
+// Simple session: just user-assistant pairs (no tool calls)
 export interface Session {
-  messages: OpenAI.ChatCompletionMessageParam[];
-  summaryFile: string;
+  history: Array<{ user: string; assistant: string }>;
 }
-
-const DATA_DIR = join(homedir(), '.agent');
 
 export class ReActAgent {
   private openai: OpenAI;
@@ -39,7 +42,8 @@ export class ReActAgent {
   constructor(config: AgentConfig) {
     this.config = {
       maxIterations: 30,
-      maxHistory: 20,
+      maxHistory: 10,  // keep last 10 conversations
+      exposedPorts: [],
       ...config,
     };
     
@@ -47,30 +51,13 @@ export class ReActAgent {
       apiKey: config.apiKey,
       baseURL: config.baseUrl,
     });
-    
-    if (!existsSync(DATA_DIR)) {
-      mkdirSync(DATA_DIR, { recursive: true });
-    }
   }
   
   private getSession(id: string): Session {
     if (!this.sessions.has(id)) {
-      this.sessions.set(id, {
-        messages: [],
-        summaryFile: join(DATA_DIR, `summary_${id}.md`),
-      });
+      this.sessions.set(id, { history: [] });
     }
     return this.sessions.get(id)!;
-  }
-  
-  private loadSummary(session: Session): string {
-    return existsSync(session.summaryFile) 
-      ? readFileSync(session.summaryFile, 'utf-8') 
-      : '';
-  }
-  
-  private saveSummary(session: Session, summary: string) {
-    writeFileSync(session.summaryFile, summary, 'utf-8');
   }
   
   private getSystemPrompt(): string {
@@ -82,50 +69,43 @@ export class ReActAgent {
       .replace('{{date}}', new Date().toISOString().slice(0, 10))
       .replace('{{tools}}', tools.toolNames.join(', '));
     
+    // Add exposed ports info
+    if (this.config.exposedPorts?.length) {
+      prompt += `\n\n<NETWORK>
+Exposed ports (accessible from external network):
+${this.config.exposedPorts.map(p => `- Port ${p}`).join('\n')}
+Use these ports when creating web servers, APIs, etc.
+</NETWORK>`;
+    }
+    
     return prompt;
   }
   
-  // Compress history when too long
-  private async summarize(session: Session): Promise<void> {
-    if (session.messages.length < this.config.maxHistory!) return;
+  // Build messages for API call (during agent loop)
+  private buildMessages(
+    session: Session, 
+    userMessage: string,
+    workingMessages: OpenAI.ChatCompletionMessageParam[] = []
+  ): OpenAI.ChatCompletionMessageParam[] {
+    const messages: OpenAI.ChatCompletionMessageParam[] = [];
     
-    console.log(`[agent] Compressing ${session.messages.length} messages...`);
+    // 1. Fresh system prompt
+    messages.push({ role: 'system', content: this.getSystemPrompt() });
     
-    const toSummarize = session.messages.slice(0, -6);
-    const toKeep = session.messages.slice(-6);
-    
-    const prompt = `Summarize briefly (max 500 chars):
-- Task: what was requested
-- Actions: what was done  
-- State: current status
-
-${toSummarize.map(m => 
-  `${m.role}: ${typeof m.content === 'string' ? m.content?.slice(0, 200) : '...'}`
-).join('\n')}`;
-
-    try {
-      const response = await this.openai.chat.completions.create({
-        model: this.config.model,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 300,
-      });
-      
-      const summary = response.choices[0]?.message?.content || '';
-      const prev = this.loadSummary(session);
-      const full = prev 
-        ? `${prev}\n\n---\n${new Date().toISOString().slice(0, 16)}\n${summary}`
-        : summary;
-      
-      this.saveSummary(session, full);
-      session.messages = [
-        { role: 'system', content: `Previous context:\n${full}` },
-        ...toKeep,
-      ];
-      
-      console.log(`[agent] Compressed to ${session.messages.length} messages`);
-    } catch (e) {
-      console.error('[agent] Summary failed:', e);
+    // 2. Previous conversations (user-assistant pairs only)
+    for (const conv of session.history) {
+      messages.push({ role: 'user', content: conv.user });
+      messages.push({ role: 'assistant', content: conv.assistant });
     }
+    
+    // 3. Current user message
+    const dateStr = new Date().toISOString().slice(0, 10);
+    messages.push({ role: 'user', content: `[${dateStr}] ${userMessage}` });
+    
+    // 4. Working messages (tool calls during current cycle)
+    messages.push(...workingMessages);
+    
+    return messages;
   }
   
   // Main ReAct loop
@@ -135,38 +115,28 @@ ${toSummarize.map(m =>
     onToolCall?: (name: string) => void
   ): Promise<string> {
     const session = this.getSession(sessionId);
-    
-    // Initialize with system prompt
-    if (session.messages.length === 0) {
-      const summary = this.loadSummary(session);
-      session.messages.push({
-        role: 'system',
-        content: summary 
-          ? `${this.getSystemPrompt()}\n\n## Previous Context\n${summary}`
-          : this.getSystemPrompt(),
-      });
-    }
-    
-    // Add user message with current date
     const dateStr = new Date().toISOString().slice(0, 10);
-    session.messages.push({ 
-      role: 'user', 
-      content: `[${dateStr}] ${userMessage}` 
-    });
+    const currentUserMsg = `[${dateStr}] ${userMessage}`;
     
+    // Working messages for current agent cycle (tool calls, results)
+    let workingMessages: OpenAI.ChatCompletionMessageParam[] = [];
     let iteration = 0;
+    let finalResponse = '';
     
     // ReAct loop: Think → Act → Observe
     while (iteration < this.config.maxIterations!) {
       iteration++;
       
       try {
-        // Log request (full, no truncation)
+        // Build full message list
+        const messages = this.buildMessages(session, userMessage, workingMessages);
+        
+        // Log request
         console.log('\n' + '='.repeat(80));
         console.log(`[TURN ${iteration}] REQUEST → ${this.config.model}`);
         console.log('='.repeat(80));
         console.log('\nMESSAGES:');
-        for (const m of session.messages) {
+        for (const m of messages) {
           console.log(`\n[${m.role.toUpperCase()}]`);
           if (typeof m.content === 'string') {
             console.log(m.content);
@@ -183,43 +153,52 @@ ${toSummarize.map(m =>
         // Think: LLM decides what to do
         const response = await this.openai.chat.completions.create({
           model: this.config.model,
-          messages: session.messages,
+          messages,
           tools: tools.definitions as any[],
           tool_choice: 'auto',
         });
         
-        const message = response.choices[0].message;
-        
-        // Log response
+        // Log RAW response
         console.log('\n' + '-'.repeat(60));
-        console.log(`[TURN ${iteration}] RESPONSE`);
+        console.log(`[TURN ${iteration}] RAW RESPONSE`);
         console.log('-'.repeat(60));
-        console.log(JSON.stringify({
-          content: message.content,
-          tool_calls: message.tool_calls?.map(tc => ({
-            id: tc.id,
-            function: tc.function.name,
-            arguments: tc.function.arguments,
-          })),
-          usage: response.usage,
-        }, null, 2));
+        console.log(JSON.stringify(response, null, 2));
         
-        session.messages.push(message);
+        const rawMessage = response.choices[0].message;
         
-        // No tool calls = task complete or model stalled
-        if (!message.tool_calls?.length) {
-          // If empty response, nudge the model to continue
-          if (!message.content) {
+        // Log reasoning if present (vLLM reasoning models)
+        const reasoning = (rawMessage as any).reasoning || (rawMessage as any).reasoning_content;
+        if (reasoning) {
+          console.log(`\n[REASONING] ${reasoning}`);
+        }
+        
+        // Clean message - remove non-standard fields (reasoning, etc.)
+        // Only keep standard OpenAI fields to avoid API errors
+        const message: OpenAI.ChatCompletionMessageParam = {
+          role: rawMessage.role,
+          content: rawMessage.content,
+          ...(rawMessage.tool_calls && { tool_calls: rawMessage.tool_calls }),
+        };
+        
+        // No tool calls = task complete
+        if (!rawMessage.tool_calls?.length) {
+          if (!rawMessage.content) {
             console.log('\n[WARN] Empty response, nudging model to continue...');
-            session.messages.push({
+            workingMessages.push(message);
+            workingMessages.push({
               role: 'user',
               content: 'Continue. Finish the task or explain what you did.',
             });
             continue;
           }
+          
+          finalResponse = rawMessage.content;
           console.log('\n[DONE] Final response');
-          return message.content;
+          break;
         }
+        
+        // Add cleaned assistant message with tool calls to working messages
+        workingMessages.push(message);
         
         // Act: Execute tools
         for (const call of message.tool_calls) {
@@ -244,15 +223,12 @@ ${toSummarize.map(m =>
           
           console.log(`[RESULT] ${output.slice(0, 500)}${output.length > 500 ? '...' : ''}`);
           
-          session.messages.push({
+          workingMessages.push({
             role: 'tool',
             tool_call_id: call.id,
             content: output,
           });
         }
-        
-        // Compress if needed
-        await this.summarize(session);
         
       } catch (e: any) {
         console.error('[agent] Error:', e);
@@ -260,7 +236,24 @@ ${toSummarize.map(m =>
       }
     }
     
-    return '⚠️ Max iterations reached';
+    if (!finalResponse) {
+      finalResponse = '⚠️ Max iterations reached';
+    }
+    
+    // Save to history (clean: just user message + final response)
+    session.history.push({
+      user: currentUserMsg,
+      assistant: finalResponse,
+    });
+    
+    // Trim history if too long
+    while (session.history.length > this.config.maxHistory!) {
+      session.history.shift();
+    }
+    
+    console.log(`[session] History: ${session.history.length} conversations`);
+    
+    return finalResponse;
   }
   
   clear(sessionId: string) {
@@ -270,7 +263,7 @@ ${toSummarize.map(m =>
   getInfo(sessionId: string) {
     const session = this.sessions.get(sessionId);
     return {
-      messages: session?.messages.length || 0,
+      messages: session?.history.length || 0,
       tools: tools.toolNames.length,
     };
   }
