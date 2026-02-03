@@ -30,7 +30,7 @@ async function searchViaProxy(query: string): Promise<SearchResult[]> {
     throw new Error(`Proxy error: ${response.status}`);
   }
   
-  const data = await response.json();
+  const data = await response.json() as { search_result?: any[] };
   return (data.search_result || []).map((r: any) => ({
     title: r.title,
     url: r.link,
@@ -58,7 +58,7 @@ async function searchZai(query: string, apiKey: string): Promise<SearchResult[]>
     throw new Error(`Z.AI error: ${response.status}`);
   }
   
-  const data = await response.json();
+  const data = await response.json() as { search_result?: any[] };
   return (data.search_result || []).map((r: any) => ({
     title: r.title,
     url: r.link,
@@ -162,7 +162,7 @@ async function readPageViaProxy(url: string): Promise<string> {
     throw new Error(`Proxy error: ${response.status}`);
   }
   
-  const data = await response.json();
+  const data = await response.json() as { reader_result?: { content?: string; title?: string; description?: string } };
   const result = data.reader_result;
   
   if (!result?.content) {
@@ -197,7 +197,7 @@ async function readPageZai(url: string, apiKey: string): Promise<string> {
     throw new Error(`Z.AI Reader error: ${response.status}`);
   }
   
-  const data = await response.json();
+  const data = await response.json() as { reader_result?: { content?: string; title?: string; description?: string } };
   const result = data.reader_result;
   
   if (!result?.content) {

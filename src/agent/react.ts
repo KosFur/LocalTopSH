@@ -237,7 +237,7 @@ ${chatHistory}
         
         // Act: Execute tools
         let hasBlocked = false;
-        for (const call of message.tool_calls) {
+        for (const call of message.tool_calls || []) {
           const name = call.function.name;
           
           // Parse args with error handling (LLM sometimes returns invalid JSON)

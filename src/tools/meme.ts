@@ -46,7 +46,7 @@ async function getImgflipMeme(): Promise<ImageResult | null> {
         signal: AbortSignal.timeout(10000) 
       });
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json() as { success: boolean; data?: { memes: any[] } };
         if (data.success && data.data?.memes) {
           memesCache = data.data.memes;
           cacheTime = now;
@@ -74,7 +74,7 @@ async function getRandomDog(): Promise<ImageResult | null> {
     });
     if (!res.ok) return null;
     
-    const data = await res.json();
+    const data = await res.json() as { status: string; message: string };
     if (data.status === 'success' && data.message) {
       // Extract breed from URL
       const match = data.message.match(/breeds\/([^/]+)/);
@@ -98,7 +98,7 @@ async function getRandomCat(): Promise<ImageResult | null> {
     });
     if (!res.ok) return null;
     
-    const data = await res.json();
+    const data = await res.json() as { url: string }[];
     if (data[0]?.url) {
       return {
         title: '🐱 Random cat',
@@ -119,7 +119,7 @@ async function getCatMeme(): Promise<ImageResult | null> {
     });
     if (!res.ok) return null;
     
-    const data = await res.json();
+    const data = await res.json() as { url: string; tags?: string[] };
     if (data.url) {
       const tags = data.tags?.slice(0, 3).join(', ') || 'funny cat';
       return {

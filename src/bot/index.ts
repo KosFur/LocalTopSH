@@ -1129,7 +1129,7 @@ export function createBot(config: BotConfig) {
     if (!canAcceptUser(userId)) {
       console.log(`[bot] User ${userId} rejected - server busy (${activeUsers.size}/${maxConcurrentUsers})`);
       try {
-        await ctx.telegram.setMessageReaction(chatId, messageId, [{ type: 'emoji', emoji: '⏳' }]);
+        await ctx.telegram.setMessageReaction(chatId, messageId, [{ type: 'emoji', emoji: '🤔' as any }]);
       } catch {}
       await safeSend(chatId, () => 
         ctx.reply('⏳ Сервер занят, попробуй через минуту', { reply_parameters: { message_id: messageId } })
@@ -1234,7 +1234,7 @@ export function createBot(config: BotConfig) {
         
         // Change reaction to done
         try {
-          await ctx.telegram.setMessageReaction(chatId, messageId, [{ type: 'emoji', emoji: '✅' }]);
+          await ctx.telegram.setMessageReaction(chatId, messageId, [{ type: 'emoji', emoji: '👍' as any }]);
         } catch {}
         
         // Send final response with rate limiting
@@ -1293,7 +1293,7 @@ export function createBot(config: BotConfig) {
         
         // Change reaction to error
         try {
-          await ctx.telegram.setMessageReaction(chatId, messageId, [{ type: 'emoji', emoji: '❌' }]);
+          await ctx.telegram.setMessageReaction(chatId, messageId, [{ type: 'emoji', emoji: '👎' as any }]);
         } catch {}
         
         const errorComment = getToolComment('error', true);
