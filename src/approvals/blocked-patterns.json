@@ -1528,8 +1528,14 @@
     {
       "id": "cd-parent-workspace",
       "category": "cross-user",
-      "pattern": "cd\\s+\\.\\./|cd\\s+\\.\\.$",
+      "pattern": "cd\\s+\\.\\.",
       "reason": "BLOCKED: Cannot navigate to parent directory"
+    },
+    {
+      "id": "cd-dotdot-in-script",
+      "category": "cross-user",
+      "pattern": "\\.\\./\\.\\.|\\.\\. &&|\\.\\.;|\\.\\.\\n",
+      "reason": "BLOCKED: Cannot navigate outside workspace"
     },
     {
       "id": "find-workspace",
