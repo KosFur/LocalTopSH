@@ -1506,6 +1506,36 @@
       "category": "obfuscation",
       "pattern": "bytes\\s*\\(\\s*\\[.*\\]\\s*\\)\\.decode",
       "reason": "BLOCKED: bytes array decoding"
+    },
+    {
+      "id": "workspace-root-ls",
+      "category": "cross-user",
+      "pattern": "ls\\s+(-[a-zA-Z]*\\s+)*(/workspace|\\.\\./)(?!\\d)",
+      "reason": "BLOCKED: Cannot list other users workspaces"
+    },
+    {
+      "id": "workspace-root-direct",
+      "category": "cross-user",
+      "pattern": "\\bls\\b.*\\/workspace\\s*$",
+      "reason": "BLOCKED: Cannot list workspace root"
+    },
+    {
+      "id": "shared-dir-access",
+      "category": "cross-user",
+      "pattern": "/_shared/|_shared/GLOBAL|_shared/CHAT",
+      "reason": "BLOCKED: Cannot access shared logs directly"
+    },
+    {
+      "id": "cd-parent-workspace",
+      "category": "cross-user",
+      "pattern": "cd\\s+\\.\\./|cd\\s+\\.\\.$",
+      "reason": "BLOCKED: Cannot navigate to parent directory"
+    },
+    {
+      "id": "find-workspace",
+      "category": "cross-user",
+      "pattern": "find\\s+(/workspace|\\.\\.)",
+      "reason": "BLOCKED: Cannot search outside your workspace"
     }
   ]
 }
