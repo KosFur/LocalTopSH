@@ -204,10 +204,13 @@ ${chatHistory}
         }
         
         // Think: LLM decides what to do
+        // Get all tools including dynamic ones (like gdrive based on user status)
+        const allTools = tools.getAllDefinitions(this.config.cwd);
+        
         const response = await this.openai.chat.completions.create({
           model: this.config.model,
           messages,
-          tools: tools.definitions as any[],
+          tools: allTools as any[],
           tool_choice: 'auto',
         });
         

@@ -31,6 +31,7 @@ const SENSITIVE_FILES = [
   'id_dsa',
   '.pem',
   '.key',
+  'gdrive_token.json', // Google Drive OAuth token
 ];
 
 const SENSITIVE_PATTERNS = [
@@ -41,6 +42,7 @@ const SENSITIVE_PATTERNS = [
   /private.?key/i,
   /id_(rsa|dsa|ecdsa|ed25519)$/i,
   /\.(pem|key|p12|pfx)$/i,
+  /_token\.json$/i,  // OAuth tokens (gdrive_token.json, etc.)
 ];
 
 /**

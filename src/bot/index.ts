@@ -87,7 +87,7 @@ export function createBot(config: BotConfig) {
     apiKey: config.apiKey,
   });
   initReactionLLM(llmClient, config.model);
-  setOpenAIClient(llmClient);
+  setOpenAIClient(llmClient, config.model);
   
   // Set max concurrent users from config
   if (config.maxConcurrentUsers) {

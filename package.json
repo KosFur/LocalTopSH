@@ -15,6 +15,7 @@
     "dockerode": "^4.0.2",
     "dotenv": "^16.4.5",
     "fast-glob": "^3.3.3",
+    "googleapis": "^144.0.0",
     "openai": "^4.77.0",
     "telegraf": "^4.16.3"
   },

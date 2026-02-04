@@ -46,6 +46,10 @@ services:
     secrets:
       - source: telegram_token
         mode: 0444
+      - source: gdrive_client_id
+        mode: 0444
+      - source: gdrive_client_secret
+        mode: 0444
     volumes:
       - ./workspace:/workspace
       - /var/run/docker.sock:/var/run/docker.sock:ro  # Docker API for sandboxing
@@ -92,6 +96,10 @@ secrets:
     file: ./secrets/api_key.txt
   zai_api_key:
     file: ./secrets/zai_api_key.txt
+  gdrive_client_id:
+    file: ./secrets/gdrive_client_id.txt
+  gdrive_client_secret:
+    file: ./secrets/gdrive_client_secret.txt
 
 networks:
   agent-net:

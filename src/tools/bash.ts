@@ -177,13 +177,13 @@ export const definition = {
   type: "function" as const,
   function: {
     name: "run_command",
-    description: "Run a shell command. Use for: git, npm, pip, system operations. DANGEROUS commands (rm -rf, sudo, etc.) require user approval.",
+    description: "Run a shell command in isolated sandbox. Use for: git, npm, pip, python, system ops. DANGEROUS commands require approval. IMPORTANT: For disk space use `du -sh .` NOT `df` (df shows host, not sandbox).",
     parameters: {
       type: "object",
       properties: {
         command: { 
           type: "string", 
-          description: "The shell command to execute" 
+          description: "The shell command to execute. For disk space: use `du -sh .` (NOT df)" 
         },
       },
       required: ["command"],

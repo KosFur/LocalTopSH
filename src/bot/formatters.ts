@@ -63,6 +63,25 @@ export function mdToHtml(text: string): string {
     return `\x00MENTION${idx}\x00`;  // Use null bytes as delimiters (won't match markdown patterns)
   });
   
+  // Protect URLs from formatting (underscores in URLs shouldn't become italic)
+  const urls: string[] = [];
+  result = result.replace(/https?:\/\/[^\s<>]+/g, (url) => {
+    const idx = urls.length;
+    urls.push(url);
+    return `\x00URL${idx}\x00`;
+  });
+  
+  // Protect ID-like strings (long alphanumeric with underscores, e.g., Google Drive IDs)
+  const ids: string[] = [];
+  result = result.replace(/\b[A-Za-z0-9_-]{15,}\b/g, (id) => {
+    if (id.includes('_')) {  // Only protect if contains underscore
+      const idx = ids.length;
+      ids.push(id);
+      return `\x00ID${idx}\x00`;
+    }
+    return id;
+  });
+  
   result = escapeHtml(result);
   
   codeBlocks.forEach((block, i) => {
@@ -82,6 +101,16 @@ export function mdToHtml(text: string): string {
   // Restore @mentions after formatting
   mentions.forEach((mention, i) => {
     result = result.replace(`\x00MENTION${i}\x00`, mention);
+  });
+  
+  // Restore URLs after formatting
+  urls.forEach((url, i) => {
+    result = result.replace(`\x00URL${i}\x00`, url);
+  });
+  
+  // Restore IDs after formatting
+  ids.forEach((id, i) => {
+    result = result.replace(`\x00ID${i}\x00`, id);
   });
   
   return result;

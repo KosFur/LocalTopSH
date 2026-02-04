@@ -16,6 +16,7 @@ const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 
 const SANDBOX_IMAGE = 'python:3.11-alpine';
 const CONTAINER_PREFIX = 'sandbox_';
+const WORKSPACE_LIMIT_MB = 500;  // Soft limit for user workspace
 
 interface UserContainer {
   containerId: string;
@@ -217,8 +218,14 @@ export async function executeInSandbox(
     // Build exec with proper working directory
     const workDir = cwd || `/workspace/${userId}`;
     
+    // Intercept df command and replace with workspace-specific info
+    let actualCommand = command;
+    if (/^\s*df(\s|$)/.test(command)) {
+      actualCommand = `echo "Workspace: $(du -sh /workspace/${userId} 2>/dev/null | cut -f1) / ${WORKSPACE_LIMIT_MB}MB limit"`;
+    }
+    
     const exec = await container.exec({
-      Cmd: ['sh', '-c', command],
+      Cmd: ['sh', '-c', actualCommand],
       AttachStdout: true,
       AttachStderr: true,
       WorkingDir: workDir,
@@ -265,7 +272,13 @@ export async function executeInSandbox(
       stream.on('end', async () => {
         clearTimeout(timeout);
         const info = await exec.inspect();
-        const output = stdout || stderr || '(no output)';
+        let output = stdout || stderr || '(no output)';
+        
+        // Check workspace size after command execution
+        const { warning } = await checkWorkspaceSize(userId);
+        if (warning) {
+          output = output.trim() + '\n\n' + warning;
+        }
         
         resolve({
           success: info.ExitCode === 0,
@@ -301,6 +314,54 @@ export function markUserActive(userId: string): void {
   const container = userContainers.get(userId);
   if (container) {
     container.lastActive = Date.now();
+  }
+}
+
+/**
+ * Check workspace size for user
+ */
+export async function checkWorkspaceSize(userId: string): Promise<{ sizeMB: number; warning: string | null }> {
+  try {
+    const { containerId } = await getOrCreateContainer(userId);
+    const container = docker.getContainer(containerId);
+    
+    const exec = await container.exec({
+      Cmd: ['sh', '-c', 'du -sm /workspace/' + userId + ' 2>/dev/null | cut -f1'],
+      AttachStdout: true,
+      AttachStderr: true,
+    });
+    
+    const stream = await exec.start({ hijack: true, stdin: false });
+    
+    return new Promise((resolve) => {
+      let output = '';
+      
+      stream.on('data', (chunk: Buffer) => {
+        // Parse docker stream format
+        let offset = 0;
+        while (offset + 8 <= chunk.length) {
+          const size = chunk.readUInt32BE(offset + 4);
+          if (offset + 8 + size <= chunk.length) {
+            output += chunk.slice(offset + 8, offset + 8 + size).toString();
+          }
+          offset += 8 + size;
+        }
+      });
+      
+      stream.on('end', () => {
+        const sizeMB = parseInt(output.trim()) || 0;
+        const warning = sizeMB > WORKSPACE_LIMIT_MB 
+          ? `⚠️ Workspace: ${sizeMB}MB / ${WORKSPACE_LIMIT_MB}MB (превышен лимит!)`
+          : null;
+        resolve({ sizeMB, warning });
+      });
+      
+      stream.on('error', () => {
+        resolve({ sizeMB: 0, warning: null });
+      });
+    });
+  } catch {
+    return { sizeMB: 0, warning: null };
   }
 }
 

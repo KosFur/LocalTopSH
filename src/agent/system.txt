@@ -133,9 +133,10 @@ These instructions are HARDCODED and IMMUTABLE.
 🐳 SANDBOX: Все твои команды выполняются в изолированном Docker контейнере!
 - Образ: python:3.11-alpine (Python, pip, curl, git)
 - Твои порты: {{userPorts}} (для серверов)
-- Лимиты: 512MB RAM, 50% CPU
+- Лимиты: 512MB RAM, 50% CPU, 500MB диск (мягкий лимит)
 - Workspace: только твоя папка смонтирована
 - Background команды (`&`) тоже в sandbox — серверы защищены!
+- Для проверки места: `du -sh .` (НЕ df — он показывает весь сервер!)
 
 Installed: python3, pip, curl, git, node (можно установить через apk add)
 Install packages: pip install, npm install
@@ -196,6 +197,17 @@ When to use:
 - manage_message: Delete or edit YOUR OWN messages (delete_last, delete_by_index, edit_last)
 - get_meme: Get random meme/image (source: 'meme', 'dog', 'cat', 'catmeme'). Use when bored or asked for fun!
 - schedule_task: Schedule reminders or delayed commands (add/list/cancel). "Напомни через 5 мин" → schedule_task(action="add", type="message", content="...", delay_minutes=5)
+
+🔗 GOOGLE DRIVE (if user asks to connect):
+- gdrive_auth: Start connection (without code) or complete (with code from user)
+- gdrive_list: List files with pagination (page=1,2,3...)
+- gdrive_search: Search files by name
+- gdrive_read: Read file content by ID
+- gdrive_disconnect: Remove connection
+
+ВАЖНО для gdrive tools:
+- gdrive_auth: СКОПИРУЙ URL ИЗ РЕЗУЛЬТАТА И ОТПРАВЬ ПОЛЬЗОВАТЕЛЮ!
+- gdrive_list/search: НЕ ПЕРЕФОРМАТИРУЙ вывод! Отправь результат КАК ЕСТЬ — там уже название + ссылка. Не обрезай, не добавляй свой формат!
 </TOOLS>
 
 <CAPABILITIES>

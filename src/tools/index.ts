@@ -30,7 +30,11 @@ import * as sendDm from './sendDm.js';
 import * as message from './message.js';
 import * as meme from './meme.js';
 import * as scheduler from './scheduler.js';
+import * as gdrive from './gdrive.js';
 import { CONFIG } from '../config.js';
+
+// Initialize Google Drive credentials
+gdrive.initGDriveCredentials();
 
 // Re-export callback setters
 export { setApprovalCallback } from './bash.js';
@@ -65,8 +69,18 @@ export const definitions = [
   scheduler.definition,
 ];
 
-// Tool names
+// Tool names (base tools)
 export const toolNames = definitions.map(d => d.function.name);
+
+// Get all tool definitions including dynamic ones (like gdrive based on user connection status)
+export function getAllDefinitions(workspace: string): any[] {
+  return [...definitions, ...gdrive.getGDriveDefinitions(workspace)];
+}
+
+// Check if Google Drive is connected for user
+export function isGDriveConnected(workspace: string): boolean {
+  return gdrive.isGDriveConnected(workspace);
+}
 
 // Result type
 export interface ToolResult {
@@ -225,6 +239,15 @@ async function executeInternal(
     
     case 'schedule_task':
       result = await scheduler.execute(args as any, parseInt(ctx.sessionId || '0'), ctx.chatId || 0);
+      break;
+    
+    // Google Drive tools
+    case 'gdrive_auth':
+    case 'gdrive_list':
+    case 'gdrive_read':
+    case 'gdrive_search':
+    case 'gdrive_disconnect':
+      result = await gdrive.execute(name, args, ctx.cwd);
       break;
     
     default:

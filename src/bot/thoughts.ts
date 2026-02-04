@@ -15,6 +15,7 @@ let mainGroupChatId: number | null = null;
 
 // OpenAI client (set from outside)
 let openaiClient: OpenAI | null = null;
+let llmModel: string = 'gpt-oss-120b';
 
 export function setMainGroupChatId(chatId: number) {
   mainGroupChatId = chatId;
@@ -24,8 +25,9 @@ export function getMainGroupChatId(): number | null {
   return mainGroupChatId;
 }
 
-export function setOpenAIClient(client: OpenAI) {
+export function setOpenAIClient(client: OpenAI, model?: string) {
   openaiClient = client;
+  if (model) llmModel = model;
 }
 
 /**
@@ -88,7 +90,7 @@ ${chatHistory}
 
   try {
     const response = await openaiClient.chat.completions.create({
-      model: CONFIG.model || 'gpt-4o-mini',
+      model: llmModel,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
