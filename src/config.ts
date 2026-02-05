@@ -146,6 +146,15 @@ export const CONFIG = {
     documentsPath: './knowledge_docs',         // path to documents folder
   },
 
+  // ============== CRM ==============
+  crm: {
+    storagePath: './crm_data',                 // path to CRM data (for file provider)
+    provider: 'file',                          // 'file' or 'zammad'
+    // Zammad settings (when provider = 'zammad')
+    zammadUrl: process.env.ZAMMAD_URL || '',
+    zammadToken: process.env.ZAMMAD_TOKEN || '',
+  },
+
   // ============== DONE REACTIONS (after successful response) ==============
   doneEmojis: ['👍', '🔥', '💯', '👌', '🎉', '⚡', '🤩', '🏆'],
   
