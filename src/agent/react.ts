@@ -17,7 +17,13 @@ import { getMemoryForPrompt, getChatHistory } from '../tools/memory.js';
 import { CONFIG } from '../config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SYSTEM_PROMPT_FILE = join(__dirname, 'system.txt');
+
+// Select system prompt based on agent mode
+function getSystemPromptFile(): string {
+  const mode = CONFIG.agent.promptMode || 'support';
+  const filename = mode === 'support' ? 'system-support.txt' : 'system.txt';
+  return join(__dirname, filename);
+}
 
 export interface AgentConfig {
   baseUrl: string;
@@ -91,7 +97,7 @@ export class ReActAgent {
   }
   
   private getSystemPrompt(): string {
-    let prompt = readFileSync(SYSTEM_PROMPT_FILE, 'utf-8');
+    let prompt = readFileSync(getSystemPromptFile(), 'utf-8');
     
     // Extract userId from cwd path (e.g., /workspace/123456789 -> 123456789)
     const cwdParts = this.config.cwd.split('/');

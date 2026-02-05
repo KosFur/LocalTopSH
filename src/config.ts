@@ -46,6 +46,8 @@ export const CONFIG = {
     maxBlockedCommands: 3,        // stop after N blocked commands
     maxToolOutput: 8000,          // max chars per tool output (trim if larger)
     maxContextMessages: 40,       // max messages in working context (trim oldest)
+    // System prompt mode: 'default' (casual) or 'support' (professional)
+    promptMode: (process.env.AGENT_MODE || 'support') as 'default' | 'support',
   },
 
   // ============== BOT RESPONSES ==============

@@ -48,10 +48,145 @@ function readSecret(name) {
 const LLM_BASE_URL = readSecret('base_url');
 const LLM_API_KEY = readSecret('api_key');
 const ZAI_API_KEY = readSecret('zai_api_key');
+const ANTHROPIC_API_KEY = readSecret('anthropic_api_key');
+const GEMINI_API_KEY = readSecret('gemini_api_key');
+
+// Detect provider from BASE_URL
+function detectProvider(url) {
+  if (!url) return 'unknown';
+  if (url.includes('anthropic.com')) return 'anthropic';
+  if (url.includes('generativelanguage.googleapis.com')) return 'gemini';
+  if (url.includes('openrouter.ai')) return 'openrouter';
+  return 'openai'; // OpenAI-compatible
+}
+
+const LLM_PROVIDER = detectProvider(LLM_BASE_URL);
 
 console.log('[proxy] Starting API proxy...');
 console.log('[proxy] LLM endpoint:', LLM_BASE_URL ? '✓ configured' : '✗ NOT SET');
+console.log('[proxy] LLM provider:', LLM_PROVIDER);
 console.log('[proxy] ZAI API:', ZAI_API_KEY ? '✓ configured' : '✗ NOT SET');
+console.log('[proxy] Anthropic:', ANTHROPIC_API_KEY ? '✓ configured' : '(use BASE_URL)');
+console.log('[proxy] Gemini:', GEMINI_API_KEY ? '✓ configured' : '(use BASE_URL)');
+
+/**
+ * Convert OpenAI format to Anthropic format
+ */
+function convertToAnthropic(openaiBody) {
+  const messages = openaiBody.messages || [];
+  const systemMessages = messages.filter(m => m.role === 'system');
+  const otherMessages = messages.filter(m => m.role !== 'system');
+
+  return {
+    model: openaiBody.model || 'claude-3-5-sonnet-20241022',
+    max_tokens: openaiBody.max_tokens || 4096,
+    system: systemMessages.map(m => m.content).join('\n\n') || undefined,
+    messages: otherMessages.map(m => ({
+      role: m.role === 'assistant' ? 'assistant' : 'user',
+      content: m.content,
+    })),
+    tools: openaiBody.tools?.map(t => ({
+      name: t.function.name,
+      description: t.function.description,
+      input_schema: t.function.parameters,
+    })),
+  };
+}
+
+/**
+ * Convert Anthropic response to OpenAI format
+ */
+function convertFromAnthropic(anthropicRes) {
+  const content = anthropicRes.content || [];
+  const textContent = content.filter(c => c.type === 'text').map(c => c.text).join('');
+  const toolUses = content.filter(c => c.type === 'tool_use');
+
+  const message = {
+    role: 'assistant',
+    content: textContent || null,
+  };
+
+  if (toolUses.length > 0) {
+    message.tool_calls = toolUses.map(tu => ({
+      id: tu.id,
+      type: 'function',
+      function: {
+        name: tu.name,
+        arguments: JSON.stringify(tu.input),
+      },
+    }));
+  }
+
+  return {
+    id: anthropicRes.id,
+    object: 'chat.completion',
+    created: Date.now(),
+    model: anthropicRes.model,
+    choices: [{
+      index: 0,
+      message,
+      finish_reason: anthropicRes.stop_reason === 'tool_use' ? 'tool_calls' : 'stop',
+    }],
+    usage: {
+      prompt_tokens: anthropicRes.usage?.input_tokens || 0,
+      completion_tokens: anthropicRes.usage?.output_tokens || 0,
+      total_tokens: (anthropicRes.usage?.input_tokens || 0) + (anthropicRes.usage?.output_tokens || 0),
+    },
+  };
+}
+
+/**
+ * Handle Anthropic API request
+ */
+function handleAnthropicRequest(req, res, body) {
+  const anthropicBody = convertToAnthropic(body);
+  const postData = JSON.stringify(anthropicBody);
+
+  const apiKey = ANTHROPIC_API_KEY || LLM_API_KEY;
+
+  const options = {
+    hostname: 'api.anthropic.com',
+    port: 443,
+    path: '/v1/messages',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(postData),
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+  };
+
+  const proxyReq = https.request(options, (proxyRes) => {
+    let data = '';
+    proxyRes.on('data', chunk => data += chunk);
+    proxyRes.on('end', () => {
+      try {
+        const anthropicRes = JSON.parse(data);
+        if (proxyRes.statusCode !== 200) {
+          res.writeHead(proxyRes.statusCode, { 'Content-Type': 'application/json' });
+          res.end(data);
+          return;
+        }
+        const openaiRes = convertFromAnthropic(anthropicRes);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(openaiRes));
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Parse error', message: e.message }));
+      }
+    });
+  });
+
+  proxyReq.on('error', (e) => {
+    console.error('[proxy] Anthropic error:', e.message);
+    res.writeHead(502);
+    res.end(JSON.stringify({ error: 'Anthropic request failed', message: e.message }));
+  });
+
+  proxyReq.write(postData);
+  proxyReq.end();
+}
 
 /**
  * Forward request to target with auth (for streaming/LLM)
@@ -134,19 +269,39 @@ const server = http.createServer((req, res) => {
     return;
   }
   
-  // LLM API proxy: /v1/* -> BASE_URL/*
+  // LLM API proxy: /v1/* -> BASE_URL/* (with Anthropic/Gemini conversion)
   if (url.pathname.startsWith('/v1/')) {
-    if (!LLM_BASE_URL) {
+    // Check if Anthropic direct mode (no BASE_URL but ANTHROPIC_API_KEY)
+    const useAnthropic = ANTHROPIC_API_KEY && (!LLM_BASE_URL || LLM_PROVIDER === 'anthropic');
+
+    if (!LLM_BASE_URL && !useAnthropic) {
       res.writeHead(500);
       res.end(JSON.stringify({ error: 'LLM not configured' }));
       return;
     }
-    
+
+    console.log(`[proxy] LLM: ${req.method} ${url.pathname} (${useAnthropic ? 'anthropic' : LLM_PROVIDER})`);
+
+    // For Anthropic: convert format
+    if (useAnthropic && url.pathname === '/v1/chat/completions') {
+      let body = '';
+      req.on('data', chunk => body += chunk);
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body);
+          handleAnthropicRequest(req, res, parsed);
+        } catch (e) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: 'Invalid JSON', message: e.message }));
+        }
+      });
+      return;
+    }
+
+    // Default: proxy to BASE_URL
     const targetPath = url.pathname;
     const targetUrl = LLM_BASE_URL.replace(/\/v1$/, '') + targetPath + url.search;
-    
-    console.log(`[proxy] LLM: ${req.method} ${url.pathname}`);
-    
+
     proxyRequest(req, res, targetUrl, {
       'Authorization': `Bearer ${LLM_API_KEY}`,
     });

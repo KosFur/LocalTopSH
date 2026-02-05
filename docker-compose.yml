@@ -34,6 +34,10 @@ services:
         mode: 0444
       - source: zai_api_key
         mode: 0444
+      - source: anthropic_api_key
+        mode: 0444
+      - source: gemini_api_key
+        mode: 0444
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3200/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s
@@ -61,6 +65,8 @@ services:
       - PROXY_URL=http://proxy:3200
       - QDRANT_URL=http://qdrant:6333
       - MODEL_NAME=openai/gpt-oss-120b
+      # Agent mode: 'support' (professional) or 'default' (casual)
+      - AGENT_MODE=support
       - MCP_PORT=3100
       - MCP_URL=http://localhost:3100
       - WORKSPACE=/workspace
@@ -124,6 +130,11 @@ secrets:
     file: ./secrets/gdrive_client_id.txt
   gdrive_client_secret:
     file: ./secrets/gdrive_client_secret.txt
+  # Optional: Anthropic/Gemini (if not using OpenAI-compatible endpoint)
+  anthropic_api_key:
+    file: ./secrets/anthropic_api_key.txt
+  gemini_api_key:
+    file: ./secrets/gemini_api_key.txt
 
 networks:
   agent-net:
