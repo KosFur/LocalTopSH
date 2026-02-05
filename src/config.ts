@@ -133,6 +133,19 @@ export const CONFIG = {
     userId: 809532582,            // VaKovaLskii - bot owner
   },
 
+  // ============== KNOWLEDGE BASE (RAG) ==============
+  knowledge: {
+    qdrantUrl: process.env.QDRANT_URL || 'http://localhost:6333',
+    collectionName: 'instructions',
+    embeddingModel: 'text-embedding-3-small',  // OpenAI embedding model
+    embeddingDimension: 1536,                  // Dimension for text-embedding-3-small
+    chunkSize: 1000,                           // chars per chunk
+    chunkOverlap: 200,                         // overlap between chunks
+    topK: 5,                                   // number of results to return
+    scoreThreshold: 0.7,                       // minimum similarity score
+    documentsPath: './knowledge_docs',         // path to documents folder
+  },
+
   // ============== DONE REACTIONS (after successful response) ==============
   doneEmojis: ['👍', '🔥', '💯', '👌', '🎉', '⚡', '🤩', '🏆'],
   

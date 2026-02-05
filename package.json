@@ -8,19 +8,26 @@
     "gateway": "tsx src/index.ts gateway",
     "docker:up": "docker compose up -d --build",
     "docker:down": "docker compose down",
-    "docker:logs": "docker compose logs -f"
+    "docker:logs": "docker compose logs -f",
+    "kb:ingest": "tsx src/knowledge/ingest.ts",
+    "kb:status": "tsx src/knowledge/status.ts"
   },
   "dependencies": {
+    "@qdrant/js-client-rest": "^1.12.0",
     "@tavily/core": "^0.5.0",
     "dockerode": "^4.0.2",
     "dotenv": "^16.4.5",
     "fast-glob": "^3.3.3",
     "googleapis": "^144.0.0",
+    "mammoth": "^1.8.0",
     "openai": "^4.77.0",
-    "telegraf": "^4.16.3"
+    "pdf-parse": "^1.1.1",
+    "telegraf": "^4.16.3",
+    "uuid": "^11.0.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@types/uuid": "^10.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }

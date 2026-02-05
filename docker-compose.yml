@@ -1,4 +1,25 @@
 services:
+  # ============ QDRANT - Vector Database for Knowledge Base ============
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    restart: unless-stopped
+    volumes:
+      - ./qdrant_data:/qdrant/storage
+    networks:
+      - agent-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
   # ============ PROXY - holds all API secrets ============
   proxy:
     build: ./proxy
@@ -33,9 +54,12 @@ services:
     depends_on:
       proxy:
         condition: service_healthy
+      qdrant:
+        condition: service_healthy
     environment:
       # NO API KEYS HERE! Only proxy URL
       - PROXY_URL=http://proxy:3200
+      - QDRANT_URL=http://qdrant:6333
       - MODEL_NAME=openai/gpt-oss-120b
       - MCP_PORT=3100
       - MCP_URL=http://localhost:3100

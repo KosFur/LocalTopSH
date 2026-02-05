@@ -31,6 +31,7 @@ import * as message from './message.js';
 import * as meme from './meme.js';
 import * as scheduler from './scheduler.js';
 import * as gdrive from './gdrive.js';
+import * as knowledge from './knowledge.js';
 import { CONFIG } from '../config.js';
 
 // Initialize Google Drive credentials
@@ -67,6 +68,8 @@ export const definitions = [
   message.definition,
   meme.definition,
   scheduler.definition,
+  // Knowledge base tools
+  ...knowledge.definitions,
 ];
 
 // Tool names (base tools)
@@ -254,7 +257,24 @@ async function executeInternal(
     case 'gdrive_disconnect':
       result = await gdrive.execute(name, args, ctx.cwd);
       break;
-    
+
+    // Knowledge base tools
+    case 'search_knowledge':
+      result = await knowledge.executeSearchKnowledge(args as any);
+      break;
+
+    case 'get_instruction':
+      result = await knowledge.executeGetInstruction(args as any);
+      break;
+
+    case 'list_instructions':
+      result = await knowledge.executeListInstructions(args as any);
+      break;
+
+    case 'draft_response':
+      result = await knowledge.executeDraftResponse(args as any);
+      break;
+
     default:
       result = { success: false, error: `Unknown tool: ${name}` };
   }
