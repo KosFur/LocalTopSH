@@ -46,6 +46,8 @@ export const CONFIG = {
     maxBlockedCommands: 3,        // stop after N blocked commands
     maxToolOutput: 8000,          // max chars per tool output (trim if larger)
     maxContextMessages: 40,       // max messages in working context (trim oldest)
+    // System prompt mode: 'default' (casual) or 'support' (professional)
+    promptMode: (process.env.AGENT_MODE || 'support') as 'default' | 'support',
   },
 
   // ============== BOT RESPONSES ==============
@@ -131,6 +133,28 @@ export const CONFIG = {
   // ============== ADMIN ==============
   admin: {
     userId: 809532582,            // VaKovaLskii - bot owner
+  },
+
+  // ============== KNOWLEDGE BASE (RAG) ==============
+  knowledge: {
+    qdrantUrl: process.env.QDRANT_URL || 'http://localhost:6333',
+    collectionName: 'instructions',
+    embeddingModel: 'text-embedding-3-small',  // OpenAI embedding model
+    embeddingDimension: 1536,                  // Dimension for text-embedding-3-small
+    chunkSize: 1000,                           // chars per chunk
+    chunkOverlap: 200,                         // overlap between chunks
+    topK: 5,                                   // number of results to return
+    scoreThreshold: 0.7,                       // minimum similarity score
+    documentsPath: './knowledge_docs',         // path to documents folder
+  },
+
+  // ============== CRM ==============
+  crm: {
+    storagePath: './crm_data',                 // path to CRM data (for file provider)
+    provider: 'file',                          // 'file' or 'zammad'
+    // Zammad settings (when provider = 'zammad')
+    zammadUrl: process.env.ZAMMAD_URL || '',
+    zammadToken: process.env.ZAMMAD_TOKEN || '',
   },
 
   // ============== DONE REACTIONS (after successful response) ==============

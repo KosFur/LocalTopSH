@@ -31,6 +31,8 @@ import * as message from './message.js';
 import * as meme from './meme.js';
 import * as scheduler from './scheduler.js';
 import * as gdrive from './gdrive.js';
+import * as knowledge from './knowledge.js';
+import * as crm from './crm.js';
 import { CONFIG } from '../config.js';
 
 // Initialize Google Drive credentials
@@ -67,6 +69,10 @@ export const definitions = [
   message.definition,
   meme.definition,
   scheduler.definition,
+  // Knowledge base tools
+  ...knowledge.definitions,
+  // CRM tools
+  ...crm.definitions,
 ];
 
 // Tool names (base tools)
@@ -254,7 +260,65 @@ async function executeInternal(
     case 'gdrive_disconnect':
       result = await gdrive.execute(name, args, ctx.cwd);
       break;
-    
+
+    // Knowledge base tools
+    case 'search_knowledge':
+      result = await knowledge.executeSearchKnowledge(args as any);
+      break;
+
+    case 'get_instruction':
+      result = await knowledge.executeGetInstruction(args as any);
+      break;
+
+    case 'list_instructions':
+      result = await knowledge.executeListInstructions(args as any);
+      break;
+
+    case 'draft_response':
+      result = await knowledge.executeDraftResponse(args as any);
+      break;
+
+    // CRM tools
+    case 'get_ticket':
+      result = await crm.executeGetTicket(args as any);
+      break;
+
+    case 'search_tickets':
+      result = await crm.executeSearchTickets(args as any);
+      break;
+
+    case 'create_ticket':
+      result = await crm.executeCreateTicket(args as any);
+      break;
+
+    case 'update_ticket':
+      result = await crm.executeUpdateTicket(args as any);
+      break;
+
+    case 'add_ticket_note':
+      result = await crm.executeAddTicketNote(args as any);
+      break;
+
+    case 'get_customer':
+      result = await crm.executeGetCustomer(args as any);
+      break;
+
+    case 'search_customers':
+      result = await crm.executeSearchCustomers(args as any);
+      break;
+
+    case 'create_customer':
+      result = await crm.executeCreateCustomer(args as any);
+      break;
+
+    case 'add_customer_note':
+      result = await crm.executeAddCustomerNote(args as any);
+      break;
+
+    case 'crm_stats':
+      result = await crm.executeCrmStats();
+      break;
+
     default:
       result = { success: false, error: `Unknown tool: ${name}` };
   }

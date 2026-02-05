@@ -108,10 +108,15 @@ if (mode === 'gateway') {
   
   // Register commands in Telegram menu
   bot.telegram.setMyCommands([
-    { command: 'start', description: 'Start / Help' },
-    { command: 'clear', description: 'Clear session history' },
-    { command: 'status', description: 'Show status' },
-    { command: 'pending', description: 'Pending commands to approve' },
+    { command: 'help', description: '📚 Все команды' },
+    { command: 'kb', description: '📖 Поиск по базе знаний' },
+    { command: 'ticket', description: '🎫 Работа с тикетами' },
+    { command: 'tickets', description: '📋 Список тикетов' },
+    { command: 'customer', description: '👤 Поиск клиентов' },
+    { command: 'stats', description: '📊 Статистика CRM' },
+    { command: 'clear', description: '🗑 Очистить сессию' },
+    { command: 'status', description: '⚙️ Статус бота' },
+    { command: 'pending', description: '⏳ Ожидающие команды' },
   ]);
   
   bot.launch();

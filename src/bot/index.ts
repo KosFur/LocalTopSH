@@ -62,10 +62,11 @@ import {
   pendingQuestions 
 } from './handlers.js';
 import { CONFIG, getRandomDoneEmoji } from '../config.js';
-import { 
-  setupAllCommands, 
-  isAfk 
+import {
+  setupAllCommands,
+  isAfk
 } from './commands.js';
+import { setupSupportCommands } from './support-commands.js';
 
 // Re-export types and setMaxConcurrentUsers
 export type { BotConfig } from './types.js';
@@ -393,6 +394,9 @@ export function createBot(config: BotConfig) {
   
   // Setup commands (/start, /clear, /status, /pending, /afk)
   setupAllCommands(bot, config, botUsername, getAgent);
+
+  // Setup support commands (/kb, /ticket, /tickets, /customer, /stats, /help)
+  setupSupportCommands(bot);
   
   // Text messages - main handler
   bot.on('text', async (ctx) => {
